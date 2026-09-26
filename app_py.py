@@ -5,29 +5,38 @@ from tempfile import NamedTemporaryFile
 import os
 
 st.set_page_config(
-    page_title="سیستم موکاپ ویدئویی پیشرفته",
+    page_title="استودیوی پیشرفته موکاپ ویدئویی (Perspective)",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🎬 استودیوی موکاپ ویدئویی لباس")
-st.write("ویدیوی مدل و تصویر طرح خود را آپلود کنید تا با چین‌وچروک و نورپردازی پارچه ترکیب شود.")
+st.title("🎬 موکاپ‌ساز پیشرفته ویدئویی (تطبیق زاویه و تیشرت مشکی)")
+st.write("در این نسخه، طرح شما با قابلیت پرسپکتیو دقیقاً روی ۴ نقطه دلخواه روی تیشرت می‌نشیند.")
 
 st.sidebar.header("۱. آپلود فایل‌ها")
 uploaded_video = st.sidebar.file_uploader("انتخاب ویدیوی مدل (MP4 / MOV)", type=["mp4", "mov", "avi"])
-uploaded_logo = st.sidebar.file_uploader("انتخاب تصویر طرح (PNG, JPG, JPEG, WEBP)", type=["png", "jpg", "jpeg", "webp"])
+uploaded_logo = st.sidebar.file_uploader("انتخاب تصویر طرح (PNG, JPG)", type=["png", "jpg", "jpeg", "webp"])
 
-st.sidebar.header("۲. تنظیمات ابعاد و جایگذاری")
-pos_x = st.sidebar.slider("موقعیت افقی (X)", 0, 100, 35)
-pos_y = st.sidebar.slider("موقعیت عمودی (Y)", 0, 100, 40)
-scale_size = st.sidebar.slider("اندازه طرح (Scale)", 50, 500, 200)
+st.sidebar.header("۲. تنظیمات ۴ گوشه تیشرت (پرسپکتیو)")
+st.sidebar.info("مختصات درصدی ۴ گوشه قرارگیری طرح روی تیشرت را مشخص کنید:")
+p1_x = st.sidebar.slider("بالا-چپ: افقی X", 0, 100, 35)
+p1_y = st.sidebar.slider("بالا-چپ: عمودی Y", 0, 100, 35)
 
-st.sidebar.header("۳. تنظیمات واقع‌گرایانه (چروک و سایه)")
+p2_x = st.sidebar.slider("بالا-راست: افقی X", 0, 100, 65)
+p2_y = st.sidebar.slider("بالا-راست: عمودی Y", 0, 100, 35)
+
+p3_x = st.sidebar.slider("پایین-راست: افقی X", 0, 100, 65)
+p3_y = st.sidebar.slider("پایین-راست: عمودی Y", 0, 100, 60)
+
+p4_x = st.sidebar.slider("پایین-چپ: افقی X", 0, 100, 35)
+p4_y = st.sidebar.slider("پایین-چپ: عمودی Y", 0, 100, 60)
+
+st.sidebar.header("۳. تنظیمات رنگ برای تیشرت مشکی / تیره")
 blend_mode = st.sidebar.selectbox(
-    "حالت ترکیب رنگ و سایه پارچه", 
-    ["Multiply (جذب سایه‌های چروک)", "Overlay (برجسته روی بافت)", "Normal (معمولی)"]
+    "حالت ترکیب رنگ روی پارچه", 
+    ["Screen / روشن‌کننده (مخصوص تیشرت مشکی)", "Multiply (مخصوص تیشرت روشن/سفید)", "Normal (بدون افکت پارچه)"]
 )
-opacity = st.sidebar.slider("میزان شفافیت/محو شدن در چروک‌ها", 0.1, 1.0, 0.85)
+opacity = st.sidebar.slider("میزان شفافیت طرح", 0.1, 1.0, 0.95)
 
 col1, col2 = st.columns(2)
 
@@ -44,11 +53,11 @@ with col1:
         st.image(uploaded_logo, width=200)
 
 with col2:
-    st.subheader("گزارش پردازش و دانلود خروجی")
+    st.subheader("گزارش پردازش و دانلود")
     debug_box = st.empty()
     download_placeholder = st.empty()
 
-if st.button("🚀 شروع پردازش و رندر موکاپ"):
+if st.button("🚀 شروع پردازش پرسپکتیو و رندر"):
     if not uploaded_video or not uploaded_logo:
         st.warning("لطفاً هم ویدیو و هم تصویر طرح را آپلود کنید!")
     else:
@@ -57,7 +66,7 @@ if st.button("🚀 شروع پردازش و رندر موکاپ"):
             log_messages.append(msg)
             debug_box.code("\n".join(log_messages))
 
-        add_log("🔄 در حال ذخیره موقت فایل ویدیو...")
+        add_log("🔄 در حال ذخیره موقت ویدیو...")
         
         try:
             tfile = NamedTemporaryFile(delete=False, suffix='.mp4')
@@ -72,24 +81,28 @@ if st.button("🚀 شروع پردازش و رندر موکاپ"):
                 fps = 30.0
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
-            add_log(f"✅ ویدیو بارگذاری شد ({total_frames} فریم)")
+            add_log(f"✅ ویدیو بارگذاری شد ({width}x{height} - {total_frames} فریم)")
             
             logo_bytes = np.asarray(bytearray(uploaded_logo.read()), dtype=np.uint8)
             logo = cv2.imdecode(logo_bytes, cv2.IMREAD_UNCHANGED)
             add_log("✅ تصویر طرح بارگذاری شد.")
             
-            output_path = "output_mockup.mp4"
+            output_path = "output_perspective.mp4"
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
             
             if not out.isOpened():
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')
-                output_path = "output_mockup.avi"
+                output_path = "output_perspective.avi"
                 out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
                 
-            add_log("🔄 در حال اعمال طرح روی فریم‌های ویدیو...")
-            frame_count = 0
+            add_log("🔄 در حال اعمال ترنسفورمیشن پرسپکتیو روی فریم‌ها...")
+            frame_count = 5
             progress_bar = st.progress(0)
+            
+            # ابعاد مستطیل اصلی طرح
+            h_l, w_l = logo.shape[:2]
+            pts_src = np.float32([[0, 0], [w_l, 0], [w_l, h_l], [0, h_l]])
             
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -97,43 +110,48 @@ if st.button("🚀 شروع پردازش و رندر موکاپ"):
                     break
                 
                 frame_count += 1
-                curr_w = scale_size
-                curr_h = int(scale_size * (logo.shape[0] / logo.shape[1]))
                 
-                x_c = int(width * (pos_x / 100.0))
-                y_c = int(height * (pos_y / 100.0))
+                # محاسبه ۴ نقطه مقصد بر اساس درصدهای اسلایدر
+                dst_tl = [width * (p1_x / 100.0), height * (p1_y / 100.0)]
+                dst_tr = [width * (p2_x / 100.0), height * (p2_y / 100.0)]
+                dst_br = [width * (p3_x / 100.0), height * (p3_y / 100.0)]
+                dst_bl = [width * (p4_x / 100.0), height * (p4_y / 100.0)]
                 
-                logo_resized = cv2.resize(logo, (curr_w, curr_h), interpolation=cv2.INTER_AREA)
+                pts_dst = np.float32([dst_tl, dst_tr, dst_br, dst_bl])
                 
-                if len(logo_resized.shape) == 3 and logo_resized.shape[2] == 4:
-                    b_l, g_l, r_l, a_l = cv2.split(logo_resized)
-                    logo_rgb = cv2.merge((b_l, g_l, r_l))
-                    mask = cv2.medianBlur(a_l, 3)
+                # محاسبه ماتریس پرسپکتیو برای خم کردن و منطبق کردن طرح
+                matrix = cv2.getPerspectiveTransform(pts_src, pts_dst)
+                warped_logo = cv2.warpPerspective(logo, matrix, (width, height), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0,0,0,0))
+                
+                # جداسازی ماسک و رنگ طرح
+                if warped_logo.shape[2] == 4:
+                    b_w, g_w, r_w, a_w = cv2.split(warped_logo)
+                    logo_rgb = cv2.merge((b_w, g_w, r_w))
+                    mask = a_w.astype(float) / 255.0
                 else:
-                    logo_rgb = logo_resized[:, :, :3] if logo_resized.shape[2] >= 3 else cv2.cvtColor(logo_resized, cv2.COLOR_GRAY2BGR)
-                    mask = np.full((logo_resized.shape[0], logo_resized.shape[1]), 255, dtype=np.uint8)
+                    logo_rgb = warped_logo[:, :, :3]
+                    # ایجاد ماسک هوشمند برای عکس‌های بدون شفافیت (حذف پس‌زمینه سیاه احتمالی)
+                    gray_l = cv2.cvtColor(logo_rgb, cv2.COLOR_BGR2GRAY)
+                    _, mask = cv2.threshold(gray_l, 15, 255, cv2.THRESH_BINARY)
+                    mask = mask.astype(float) / 255.0
+
+                mask = mask * opacity
                 
-                h_l, w_l, _ = logo_resized.shape
-                
-                if y_c + h_l <= height and x_c + w_l <= width and y_c >= 0 and x_c >= 0:
-                    roi = frame[y_c:y_c+h_l, x_c:x_c+w_l]
-                    mask_float = (mask / 255.0) * opacity
+                # اعمال ترکیب رنگ روی فریم ویدیو
+                for c in range(3):
+                    bg_c = frame[:, :, c].astype(float)
+                    fg_c = logo_rgb[:, :, c].astype(float)
                     
-                    for c in range(3):
-                        bg_channel = roi[:, :, c].astype(float)
-                        fg_channel = logo_rgb[:, :, c].astype(float)
+                    if blend_mode.startswith("Screen"):
+                        # مناسب تیشرت مشکی: رنگ‌ها را روشن و شفاف روی پس‌زمینه تیره مینماید
+                        blended = 255.0 - (((255.0 - bg_c) * (255.0 - fg_c)) / 255.0)
+                    elif blend_mode.startswith("Multiply"):
+                        blended = (bg_c * fg_c) / 255.0
+                    else:
+                        blended = fg_c
                         
-                        if blend_mode.startswith("Multiply"):
-                            blended = (bg_channel / 255.0) * (fg_channel / 255.0) * 255.0
-                        elif blend_mode.startswith("Overlay"):
-                            blended = np.where(bg_channel < 128, (2 * bg_channel * fg_channel) / 255.0, 255 - (2 * (255 - bg_channel) * (255 - fg_channel) / 255.0))
-                        else:
-                            blended = fg_channel
-                            
-                        combined = (mask_file_val := (mask_float * blended) + ((1 - mask_float) * bg_channel))
-                        roi[:, :, c] = np.clip(combined, 0, 255).astype(np.uint8)
-                        
-                    frame[y_c:y_c+h_l, x_c:x_c+w_l] = roi
+                    mask_3d = np.dstack([mask, mask, mask])
+                    frame[:, :, c] = np.clip((mask_3d[:, :, c] * blended) + ((1.0 - mask_3d[:, :, c]) * bg_c), 0, 255).astype(np.uint8)
 
                 out.write(frame)
                 if total_frames > 0:
@@ -142,16 +160,15 @@ if st.button("🚀 شروع پردازش و رندر موکاپ"):
             cap.release()
             out.release()
             
-            add_log(f"🎉 رندر با موفقیت به پایان رسید! ({frame_count} فریم پردازش شد)")
-            st.success("ویدیوی موکاپ آماده شد!")
+            add_log(f"🎉 رندر پرسپکتیو با موفقیت تمام شد! ({frame_count} فریم)")
+            st.success("ویدیوی موکاپ با پرسپکتیو آماده شد!")
             
-            # قرار دادن دکمه دانلود مستقیم برای کاربر
             if os.path.exists(output_path):
                 with open(output_path, "rb") as file_data:
                     download_placeholder.download_button(
-                        label="📥 دانلود ویدیوی موکاپ نهایی",
+                        label="📥 دانلود ویدیوی موکاپ پرسپکتیو",
                         data=file_data,
-                        file_name="final_mockup_video.mp4",
+                        file_name="final_perspective_mockup.mp4",
                         mime="video/mp4"
                     )
                     
