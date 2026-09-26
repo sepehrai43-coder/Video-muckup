@@ -5,13 +5,13 @@ from tempfile import NamedTemporaryFile
 import os
 
 st.set_page_config(
-    page_title="سیستم پیشرفته موکاپ ویدئویی",
+    page_title="سیستم موکاپ ویدئویی (نسخه دیباگ)",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🎬 استودیوی موکاپ ویدئویی لباس")
-st.write("ویدیوی مدل و تصویر طرح خود را آپلود کنید تا با چین‌وچروک و نورپردازی پارچه ترکیب شود.")
+st.title("🎬 استودیوی موکاپ ویدئویی - نسخه عیب‌یابی (Debug)")
+st.write("این نسخه تمام مراحل رندر را قدم‌به‌قدم روی صفحه گزارش می‌کند تا مشکل دقیقاً مشخص شود.")
 
 st.sidebar.header("۱. آپلود فایل‌ها")
 uploaded_video = st.sidebar.file_uploader("انتخاب ویدیوی مدل (MP4 / MOV)", type=["mp4", "mov", "avi"])
@@ -44,25 +44,32 @@ with col1:
         st.image(uploaded_logo, width=200)
 
 with col2:
-    st.subheader("خروجی ویدیو موکاپ")
-    output_placeholder = st.empty()
+    st.subheader("گزارش دیباگ و خروجی")
+    debug_box = st.empty()
 
-if st.button("🚀 ساخت و رندر موکاپ ویدئویی"):
+if st.button("🚀 شروع پردازش و دیباگ"):
     if not uploaded_video or not uploaded_logo:
         st.warning("لطفاً هم ویدیو و هم تصویر طرح را آپلود کنید!")
     else:
-        with st.spinner("در حال پردازش فریم‌ها و شبیه‌سازی چروک‌های پارچه... لطفاً صبر کنید"):
-            
-            # ذخیره ویدیوی ورودی در فایل موقت
+        log_messages = []
+        def add_log(msg):
+            log_messages.append(msg)
+            debug_box.code("\n".join(log_messages))
+
+        add_log("🔄 در حال ذخیره موقت فایل ویدیو...")
+        
+        try:
             tfile = NamedTemporaryFile(delete=False, suffix='.mp4')
             tfile.write(uploaded_video.read())
             tfile.close()
+            add_log(f"✅ فایل ویدیو ذخیره شد در مسیر موقت: {tfile.name}")
             
             cap = cv2.VideoCapture(tfile.name)
-            
-            logo_bytes = np.asarray(bytearray(uploaded_logo.read()), dtype=np.uint8)
-            logo = cv2.imdecode(logo_bytes, cv2.IMREAD_UNCHANGED)
-            
+            if not cap.isOpened():
+                add_log("❌ خطا: کتابخانه OpenCV نتوانست ویدیو را باز کند!")
+            else:
+                add_log("✅ ویدیوی ورودی با موفقیت توسط OpenCV باز شد.")
+                
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = cap.get(cv2.CAP_PROP_FPS)
@@ -70,72 +77,108 @@ if st.button("🚀 ساخت و رندر موکاپ ویدئویی"):
                 fps = 30.0
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
-            output_path = "output_mockup_final.mp4"
+            add_log(f"📊 مشخصات ویدیو -> عرض: {width}, ارتفاع: {height}, فریم‌ریت: {fps}, کل فریم‌ها: {total_frames}")
             
-            # استفاده از کدک سازگار با مرورگرها در سرور ابری
+            add_log("🔄 در حال خواندن تصویر طرح...")
+            logo_bytes = np.asarray(bytearray(uploaded_logo.read()), dtype=np.uint8)
+            logo = cv2.imdecode(logo_bytes, cv2.IMREAD_UNCHANGED)
+            
+            if logo is None:
+                add_log("❌ خطا: تصویر طرح خوانده نشد یا فرمت آن خراب است!")
+            else:
+                add_log(f"✅ تصویر طرح با موفقیت خوانده شد. ابعاد اولیه: {logo.shape}")
+                
+            output_path = "output_debug.mp4"
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
             
-            # اگر چهارحرفی بالا کار نکرد، حالت پشتیبان
             if not out.isOpened():
+                add_log("⚠️ هشدار: کدک mp4v کار نکرد، در حال تست کدک XVID...")
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')
-                output_path = "output_mockup_final.avi"
+                output_path = "output_debug.avi"
                 out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-            
-            progress_bar = st.progress(0)
-            frame_count = 0
-            
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
                 
-                curr_w = scale_size
-                curr_h = int(scale_size * (logo.shape[0] / logo.shape[1]))
+            if not out.isOpened():
+                add_log("❌ خطای بحرانی: VideoWriter نتوانست فایل خروجی را ایجاد کند!")
+            else:
+                add_log(f"✅ فایل خروجی آماده‌سازی شد: {output_path}")
                 
-                x_c = int(width * (pos_x / 100.0))
-                y_c = int(height * (pos_y / 100.0))
+                add_log("🔄 شروع حلقه پردازش فریم‌ها...")
+                frame_count = 0
+                success_frames = 0
                 
-                logo_resized = cv2.resize(logo, (curr_w, curr_h), interpolation=cv2.INTER_AREA)
+                progress_bar = st.progress(0)
                 
-                if len(logo_resized.shape) == 3 and logo_resized.shape[2] == 4:
-                    b_l, g_l, r_l, a_l = cv2.split(logo_resized)
-                    logo_rgb = cv2.merge((b_l, g_l, r_l))
-                    mask = cv2.medianBlur(a_l, 3)
-                else:
-                    logo_rgb = logo_resized[:, :, :3] if logo_resized.shape[2] >= 3 else cv2.cvtColor(logo_resized, cv2.COLOR_GRAY2BGR)
-                    mask = np.full((logo_resized.shape[0], logo_resized.shape[1]), 255, dtype=np.uint8)
-                
-                h_l, w_l, _ = logo_resized.shape
-                
-                if y_c + h_l <= height and x_c + w_l <= width and y_c >= 0 and x_c >= 0:
-                    roi = frame[y_c:y_c+h_l, x_c:x_c+w_l]
-                    mask_float = (mask / 255.0) * opacity
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
                     
-                    for c in range(3):
-                        bg_channel = roi[:, :, c].astype(float)
-                        fg_channel = logo_rgb[:, :, c].astype(float)
+                    frame_count += 1
+                    
+                    try:
+                        curr_w = scale_size
+                        curr_h = int(scale_size * (logo.shape[0] / logo.shape[1]))
                         
-                        if blend_mode == "Multiply (جذب سایه‌های چروک)":
-                            blended = (bg_channel / 255.0) * (fg_channel / 255.0) * 255.0
-                        elif blend_mode == "Overlay (برجسته روی بافت)":
-                            blended = np.where(bg_channel < 128, (2 * bg_channel * fg_channel) / 255.0, 255 - (2 * (255 - bg_channel) * (255 - fg_channel) / 255.0))
+                        x_c = int(width * (pos_x / 100.0))
+                        y_c = int(height * (pos_y / 100.0))
+                        
+                        logo_resized = cv2.resize(logo, (curr_w, curr_h), interpolation=cv2.INTER_AREA)
+                        
+                        if len(logo_resized.shape) == 3 and logo_resized.shape[2] == 4:
+                            b_l, g_l, r_l, a_l = cv2.split(logo_resized)
+                            logo_rgb = cv2.merge((b_l, g_l, r_l))
+                            mask = cv2.medianBlur(a_l, 3)
                         else:
-                            blended = fg_channel
-                            
-                        combined = (mask_float * blended) + ((1 - mask_float) * bg_channel)
-                        roi[:, :, c] = np.clip(combined, 0, 255).astype(np.uint8)
+                            logo_rgb = logo_resized[:, :, :3] if logo_resized.shape[2] >= 3 else cv2.cvtColor(logo_resized, cv2.COLOR_GRAY2BGR)
+                            mask = np.full((logo_resized.shape[0], logo_resized.shape[1]), 255, dtype=np.uint8)
                         
-                    frame[y_c:y_c+h_l, x_c:x_c+w_l] = roi
+                        h_l, w_l, _ = logo_resized.shape
+                        
+                        if y_c + h_l <= height and x_c + w_l <= width and y_c >= 0 and x_c >= 0:
+                            roi = frame[y_c:y_c+h_l, x_c:x_c+w_l]
+                            mask_float = (mask / 255.0) * opacity
+                            
+                            for c in range(3):
+                                bg_channel = roi[:, :, c].astype(float)
+                                fg_channel = logo_rgb[:, :, c].astype(float)
+                                
+                                if blend_mode.startswith("Multiply"):
+                                    blended = (bg_channel / 255.0) * (fg_channel / 255.0) * 255.0
+                                elif blend_mode.startswith("Overlay"):
+                                    blended = np.where(bg_channel < 128, (2 * bg_channel * fg_channel) / 255.0, 255 - (2 * (255 - bg_channel) * (255 - fg_channel) / 255.0))
+                                else:
+                                    blended = fg_channel
+                                    
+                                combined = (mask_float * blended) + ((1 - mask_float) * bg_channel)
+                                roi[:, :, c] = np.clip(combined, 0, 255).astype(np.uint8)
+                                
+                            frame[y_c:y_c+h_l, x_c:x_c+w_l] = roi
 
-                out.write(frame)
-                frame_count += 1
-                if total_frames > 0:
-                    progress_bar.progress(min(frame_count / total_frames, 1.0))
+                        out.write(frame)
+                        success_frames += 1
+                    except Exception as e:
+                        add_log(f"⚠️ خطا در پردازش فریم {frame_count}: {str(e)}")
+                        
+                    if total_frames > 0:
+                        progress_bar.progress(min(frame_count / total_frames, 1.0))
+                
+                cap.release()
+                out.release()
+                
+                add_log(f"🎉 پردازش تمام شد! تعداد کل فریم‌های خوانده شده: {frame_count}")
+                add_log(f"✅ تعداد فریم‌های با موفقیت نوشته شده: {success_frames}")
+                
+                if os.path.exists(output_path):
+                    file_size = os.path.getsize(output_path)
+                    add_log(f"📁 حجم فایل خروجی: {file_size} بایت")
+                    if file_size > 1000:
+                        st.success("ویدیو با موفقیت ساخته شد!")
+                        st.video(output_path)
+                    else:
+                        add_log("❌ خطا: حجم فایل خروجی خیلی کم است (یعنی ویدیو خالی یا خراب ضبط شده است).")
+                else:
+                    add_log("❌ خطا: فایل خروجی اصلا روی دیسک پیدا نشد!")
                     
-            cap.release()
-            out.release()
-            os.unlink(tfile.name)
-            
-            st.success("🎉 ویدیوی موکاپ شما با موفقیت ساخته شد!")
-            st.video(output_path)
+        except Exception as general_error:
+            add_log(f"❌ خطای کلی سیستم: {str(general_error)}")
