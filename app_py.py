@@ -2,8 +2,8 @@ import streamlit as st
 import cv2
 import numpy as np
 from tempfile import NamedTemporaryFile
+import os
 
-# تنظیمات صفحه وب‌اپلیکیشن
 st.set_page_config(
     page_title="سیستم پیشرفته موکاپ ویدئویی",
     layout="wide",
@@ -13,10 +13,8 @@ st.set_page_config(
 st.title("🎬 استودیوی موکاپ ویدئویی لباس")
 st.write("ویدیوی مدل و تصویر طرح خود را آپلود کنید تا با چین‌وچروک و نورپردازی پارچه ترکیب شود.")
 
-# --- بخش سایدبار (تنظیمات و آپلود فایل) ---
 st.sidebar.header("۱. آپلود فایل‌ها")
 uploaded_video = st.sidebar.file_uploader("انتخاب ویدیوی مدل (MP4 / MOV)", type=["mp4", "mov", "avi"])
-# اضافه شدن تمام فرمت‌های عکس رایج
 uploaded_logo = st.sidebar.file_uploader("انتخاب تصویر طرح (PNG, JPG, JPEG, WEBP)", type=["png", "jpg", "jpeg", "webp"])
 
 st.sidebar.header("۲. تنظیمات ابعاد و جایگذاری")
@@ -31,7 +29,6 @@ blend_mode = st.sidebar.selectbox(
 )
 opacity = st.sidebar.slider("میزان شفافیت/محو شدن در چروک‌ها", 0.1, 1.0, 0.85)
 
-# --- بخش اصلی رابط کاربری ---
 col1, col2 = st.columns(2)
 
 with col1:
@@ -40,7 +37,7 @@ with col1:
         st.write("🎥 **پیش‌نمایش ویدیو:**")
         st.video(uploaded_video)
     else:
-        st.info("لطفاً یک ویدیو بارگذاری کنید تا پیش‌نمایش آن اینجا ظاهر شود.")
+        st.info("لطفاً یک ویدیو بارگذاری کنید.")
         
     if uploaded_logo:
         st.write("🖼️ **پیش‌نمایش طرح:**")
@@ -50,31 +47,40 @@ with col2:
     st.subheader("خروجی ویدیو موکاپ")
     output_placeholder = st.empty()
 
-# دکمه پردازش نهایی
 if st.button("🚀 ساخت و رندر موکاپ ویدئویی"):
     if not uploaded_video or not uploaded_logo:
         st.warning("لطفاً هم ویدیو و هم تصویر طرح را آپلود کنید!")
     else:
         with st.spinner("در حال پردازش فریم‌ها و شبیه‌سازی چروک‌های پارچه... لطفاً صبر کنید"):
             
-            # ذخیره موقت ویدیو
+            # ذخیره ویدیوی ورودی در فایل موقت
             tfile = NamedTemporaryFile(delete=False, suffix='.mp4')
             tfile.write(uploaded_video.read())
+            tfile.close()
+            
             cap = cv2.VideoCapture(tfile.name)
             
-            # خواندن تصویر طرح
             logo_bytes = np.asarray(bytearray(uploaded_logo.read()), dtype=np.uint8)
             logo = cv2.imdecode(logo_bytes, cv2.IMREAD_UNCHANGED)
             
-            # مشخصات ویدیو
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = cap.get(cv2.CAP_PROP_FPS)
+            if fps == 0 or np.isnan(fps):
+                fps = 30.0
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
             output_path = "output_mockup_final.mp4"
+            
+            # استفاده از کدک سازگار با مرورگرها در سرور ابری
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            
+            # اگر چهارحرفی بالا کار نکرد، حالت پشتیبان
+            if not out.isOpened():
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                output_path = "output_mockup_final.avi"
+                out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
             
             progress_bar = st.progress(0)
             frame_count = 0
@@ -92,7 +98,6 @@ if st.button("🚀 ساخت و رندر موکاپ ویدئویی"):
                 
                 logo_resized = cv2.resize(logo, (curr_w, curr_h), interpolation=cv2.INTER_AREA)
                 
-                # بررسی هوشمند فرمت عکس (پشتیبانی از شفافیت PNG یا عکس‌های معمولی JPG/WEBP)
                 if len(logo_resized.shape) == 3 and logo_resized.shape[2] == 4:
                     b_l, g_l, r_l, a_l = cv2.split(logo_resized)
                     logo_rgb = cv2.merge((b_l, g_l, r_l))
@@ -130,6 +135,7 @@ if st.button("🚀 ساخت و رندر موکاپ ویدئویی"):
                     
             cap.release()
             out.release()
+            os.unlink(tfile.name)
             
             st.success("🎉 ویدیوی موکاپ شما با موفقیت ساخته شد!")
             st.video(output_path)
